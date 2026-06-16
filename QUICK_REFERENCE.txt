@@ -1,0 +1,479 @@
+╔═══════════════════════════════════════════════════════════════════╗
+║                                                                   ║
+║   OPTIONS MANAGER v5.5 — QUICK REFERENCE CARD                    ║
+║   Four-Module Integration Cheat Sheet                             ║
+║                                                                   ║
+╚═══════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. ALERT SYSTEM v2 — Email/SMS Notifications
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SETUP
+─────
+from alert_system_v2 import AlertManager
+
+alerts = AlertManager(
+    email_config={
+        'sender_email': 'your@gmail.com',
+        'sender_password': 'app_password_16_chars',
+        'smtp_server': 'smtp.gmail.com',
+        'smtp_port': 587,
+        'recipient_emails': ['recipient@example.com'],
+    },
+    sms_config={  # Optional
+        'account_sid': 'ACxxxxxxx',
+        'auth_token': 'token',
+        'from_number': '+1234567890',
+        'to_numbers': ['+919191XXXXXX'],
+    }
+)
+
+SEND ALERTS
+───────────
+# Breach alert
+alerts.send_breach_alert(
+    side='upper',           # 'upper' or 'lower'
+    distance=50,            # pts away from breakeven
+    strike=24500,
+    severity='WARNING',     # INFO, WARNING, CRITICAL
+    context={...}
+)
+
+# Profit target
+alerts.send_profit_target_alert(
+    strategy='Iron Fly',
+    profit_pct=50.0,
+    context={...}
+)
+
+# Stop loss
+alerts.send_stop_loss_alert(
+    strategy='Iron Fly',
+    loss_amount=5000,
+    context={...}
+)
+
+# Position opened/closed
+alerts.send_position_opened_alert('Iron Fly', context={...})
+alerts.send_position_closed_alert('Iron Fly', pnl=9375, context={...})
+
+# Custom alert
+alerts.send_alert(
+    alert_type='ADJUSTMENT',
+    subject='Rolling Call Leg',
+    message='Exit at 150, re-enter at new strike',
+    severity='INFO',
+    context={...}
+)
+
+CONTEXT DICT (from options_manager state)
+──────────────────────────────────────────
+context = {
+    'strategy': 'Iron Fly',
+    'current_spot': 24500,
+    'entry_spot': 24450,
+    'upper_be': 24600,
+    'lower_be': 24350,
+    'net_credit': 250,
+    'current_pnl': 500,
+}
+
+RATE LIMITING
+─────────────
+• Email: 5 min cooldown per alert type
+• SMS: 15 min cooldown (warning/critical only)
+• Check history: summary = alerts.get_alert_summary()
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. BROKER API HANDLER v2 — Live Market Data
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SETUP
+─────
+from broker_api_handler_v2 import BrokerManager
+
+broker = BrokerManager(
+    broker_name='zerodha',  # 'angel', 'upstox', 'manual'
+    config={
+        'api_key': 'your_key',
+        'access_token': 'your_token',
+        'symbol': '^NSEI',
+    }
+)
+# Auto-fallback to Yahoo Finance if unavailable
+
+FETCH DATA
+──────────
+# Current spot price
+spot = broker.get_spot_price()
+# Returns: 24500.5 (float)
+
+# Single option price with Greeks
+option = broker.get_option_price(
+    symbol='NIFTY',          # 'NIFTY' or 'BANKNIFTY'
+    expiry='2026-06-18',     # 'YYYY-MM-DD'
+    strike=24500,
+    opt_type='CE'            # 'CE' or 'PE'
+)
+# Returns: {
+#     'strike': 24500,
+#     'type': 'CE',
+#     'bid': 150.5,
+#     'ask': 151.5,
+#     'last_price': 151.0,
+#     'iv': 17.5,              # Implied Volatility (%)
+#     'delta': 0.65,
+#     'gamma': 0.001,
+#     'theta': -0.05,
+#     'vega': 0.08,
+#     'timestamp': '2026-06-10 10:30:00',
+# }
+
+# Option chain for expiry
+chain = broker.get_option_chain(expiry='2026-06-18')
+# Returns: {'calls': [...], 'puts': [...]}
+
+# Connection status
+status = broker.get_status()
+# Returns: {'broker': 'zerodha', 'connected': True, ...}
+
+USAGE IN OPTIONS_MANAGER
+────────────────────────
+# ANALYZE phase: Get spot for strike selection
+spot = broker.get_spot_price()
+atm_strike = round(spot / 100) * 100
+
+# SETUP phase: Get option prices for all legs
+ce_atm = broker.get_option_price('NIFTY', expiry, atm_strike, 'CE')
+pe_atm = broker.get_option_price('NIFTY', expiry, atm_strike, 'PE')
+
+# LIVE phase: Real-time monitoring
+while position_active:
+    current_spot = broker.get_spot_price()
+    state = om.monitor_live_position(current_spot, state)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. PERFORMANCE ANALYTICS v2 — Trade Logging & Metrics
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SETUP
+─────
+from performance_analytics_v2 import TradeLog, PerformanceMetrics, PerformanceReport
+
+log = TradeLog('trade_log.json')
+metrics = PerformanceMetrics(log)
+report = PerformanceReport(metrics)
+
+LOGGING TRADES
+──────────────
+# Direct from options_manager state (recommended)
+log.add_trade_from_options_manager_state(closed_state)
+# Automatically extracts: strategy, dates, prices, P&L, breakevens
+
+# Manual trade entry
+log.add_trade({
+    'id': 'IRONFLY_20260610_001',
+    'strategy': 'Iron Fly',
+    'entry_date': '2026-06-10',
+    'entry_time': '10:30:00',
+    'entry_price': 250,
+    'exit_date': '2026-06-15',
+    'exit_time': '14:00:00',
+    'exit_price': 125,
+    'pnl': 9375,
+    'pnl_pct': 37.5,
+    'days_held': 5,
+    'status': 'CLOSED',
+})
+
+CALCULATE METRICS
+──────────────────
+# Overall metrics
+all_metrics = metrics.calculate_all()
+
+# Metrics by strategy
+by_strategy = metrics.get_by_strategy()
+for strategy, m in by_strategy.items():
+    print(f"{strategy}: {m['win_rate']:.1f}% win rate")
+
+KEY METRICS RETURNED
+────────────────────
+all_metrics = {
+    'total_trades': 10,
+    'win_rate': 70.0,              # %
+    'total_pnl': 45000,            # Rs
+    'avg_pnl': 4500,               # Rs
+    'profit_factor': 2.5,          # gross_profit / abs(gross_loss)
+    'payoff_ratio': 2.0,           # avg_win / abs(avg_loss)
+    'max_drawdown': -8000,         # Rs
+    'sharpe_ratio': 1.45,          # Annualized
+    'sortino_ratio': 1.89,         # Downside-adjusted
+    'calmar_ratio': 0.85,          # annual_return / abs(max_dd)
+    'recovery_factor': 5.6,        # total_profit / abs(max_dd)
+    'roi': 45.0,                   # %
+    'consecutive_wins': 4,
+    'consecutive_losses': 2,
+}
+
+GENERATE REPORTS
+────────────────
+# Console summary
+summary = report.generate_summary(strategy=None)  # All strategies
+print(summary)
+
+summary = report.generate_summary(strategy='Iron Fly')  # Single strategy
+print(summary)
+
+# Detailed report to file
+report.generate_detailed_report('performance_report.txt')
+
+FILTER & RETRIEVE
+──────────────────
+# Get all trades
+trades = log.get_trades()
+
+# Get by strategy
+iron_fly_trades = log.get_trades(strategy='Iron Fly')
+
+# Get by status
+closed_trades = log.get_trades(status='CLOSED')
+
+# Latest N trades
+recent = log.get_latest_trades(n=10)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. BACKTESTING ENGINE v2 — Strategy Replay & Metrics
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SETUP
+─────
+from backtesting_engine_v2 import BacktestEngine, BacktestScenario
+
+engine = BacktestEngine()
+
+CREATE SCENARIO
+───────────────
+scenario = BacktestScenario(
+    strategy='Iron Fly',
+    symbol='^NSEI',
+    start_date='2026-04-01',
+    end_date='2026-06-30',
+    initial_capital=100000,
+    lot_size=75
+)
+
+ADD TRADES
+──────────
+# From options_manager state
+scenario.add_trade_from_options_manager_state(closed_state)
+
+# Manual entry
+scenario.add_trade(
+    entry_date='2026-04-01',
+    entry_price=250,           # Net debit/credit in points
+    exit_date='2026-04-07',
+    exit_price=125,            # Exit price
+    trade_type='credit',       # 'credit' or 'debit'
+    position_size=1,
+    strategy_name='Iron Fly'
+)
+
+RUN BACKTEST
+────────────
+engine.add_scenario(scenario)
+results = engine.run_all(load_price_data=False)  # False for manual trades
+
+# Get scenario metrics
+metrics = scenario.calculate_metrics()
+# Returns: {total_trades, win_rate, total_pnl, sharpe_ratio, ...}
+
+# Get summary text
+print(scenario.get_summary())
+
+COMPARE STRATEGIES
+──────────────────
+scenario1 = BacktestScenario('Iron Fly', '^NSEI', '2026-01-01', '2026-06-30')
+scenario2 = BacktestScenario('Iron Condor', '^NSEI', '2026-01-01', '2026-06-30')
+
+# Add trades to each...
+engine.add_scenario(scenario1)
+engine.add_scenario(scenario2)
+
+engine.run_all(load_price_data=False)
+comparison = engine.compare_strategies()
+
+# Returns: {
+#     'strategies': ['Iron Fly', 'Iron Condor'],
+#     'total_pnl': [45000, 52000],
+#     'win_rates': [70.0, 75.0],
+#     'sharpe_ratios': [1.45, 1.82],
+#     'max_drawdowns': [-8000, -6500],
+#     'roi': [45.0, 52.0],
+# }
+
+GENERATE REPORT
+────────────────
+engine.generate_report('backtest_report.txt')
+
+BACKTEST WORKFLOW (from trade_log)
+──────────────────────────────────
+from performance_analytics_v2 import TradeLog
+
+log = TradeLog('trade_log.json')
+engine = BacktestEngine()
+
+for strategy in ['Iron Fly', 'Iron Condor']:
+    scenario = BacktestScenario(strategy, '^NSEI', '2026-01-01', '2026-06-30')
+    
+    # Get trades for this strategy
+    trades = log.get_trades(strategy=strategy, status='CLOSED')
+    
+    # Add to backtest
+    for trade in trades:
+        scenario.add_trade(
+            entry_date=trade['entry_date'],
+            entry_price=trade['entry_price'],
+            exit_date=trade['exit_date'],
+            exit_price=trade['exit_price'],
+            trade_type='credit' if trade['entry_price'] > 0 else 'debit'
+        )
+    
+    engine.add_scenario(scenario)
+
+engine.run_all(load_price_data=False)
+engine.generate_report('backtest_report.txt')
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COMPLETE INTEGRATION EXAMPLE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Setup all modules
+alerts = AlertManager(email_config, sms_config)
+broker = BrokerManager('zerodha', broker_config)
+log = TradeLog('trade_log.json')
+metrics = PerformanceMetrics(log)
+report = PerformanceReport(metrics)
+
+# Get spot price (ANALYZE phase)
+spot = broker.get_spot_price()
+print(f"Spot: {spot}")
+
+# Setup position (SETUP phase)
+state = setup_iron_fly(spot, expiry, ...)
+alerts.send_position_opened_alert('Iron Fly', context=state)
+
+# Monitor position (LIVE phase)
+while state['phase'] == 'LIVE':
+    current_spot = broker.get_spot_price()
+    state = update_position(current_spot, state)
+    
+    if breach_detected(state):
+        alerts.send_breach_alert('upper', distance, strike, context=state)
+    
+    if profit_target_hit(state):
+        alerts.send_profit_target_alert('Iron Fly', 50.0, context=state)
+        close_position(state)
+
+# Log closed position
+log.add_trade_from_options_manager_state(state)
+alerts.send_position_closed_alert('Iron Fly', state['current_pnl'], context=state)
+
+# Analyze performance
+all_metrics = metrics.calculate_all()
+print(report.generate_summary())
+report.generate_detailed_report('performance_report.txt')
+
+# Backtest historical trades
+engine = BacktestEngine()
+scenario = BacktestScenario('Iron Fly', '^NSEI', '2026-01-01', '2026-06-30')
+for trade in log.get_trades(strategy='Iron Fly'):
+    scenario.add_trade(...)
+engine.add_scenario(scenario)
+engine.run_all()
+engine.generate_report('backtest_report.txt')
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONFIGURATION TEMPLATES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+GMAIL SETUP (for alerts)
+────────────────────────
+1. Enable 2FA in Gmail account
+2. Generate app password:
+   → myaccount.google.com → Security → App passwords
+3. Copy 16-char password
+4. Use in email_config:
+   {
+       'sender_email': 'your_email@gmail.com',
+       'sender_password': '16_char_app_password',
+       'smtp_server': 'smtp.gmail.com',
+       'smtp_port': 587,
+       'recipient_emails': ['alert@example.com'],
+   }
+
+ZERODHA SETUP (for broker data)
+────────────────────────────────
+1. Get API key from Zerodha: developer.kite.trade
+2. Generate access token via Kite Connect
+3. Use in broker_config:
+   {
+       'broker': 'zerodha',
+       'api_key': 'your_api_key',
+       'access_token': 'your_access_token',
+       'symbol': '^NSEI',
+   }
+
+TWILIO SETUP (for SMS alerts)
+──────────────────────────────
+1. Create account: twilio.com
+2. Get account SID & auth token
+3. Get trial phone number
+4. Use in sms_config:
+   {
+       'account_sid': 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+       'auth_token': 'your_auth_token',
+       'from_number': '+1234567890',
+       'to_numbers': ['+919191XXXXXX'],  # Use +91 for India
+   }
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Email not sending?
+  → Check sender_password is 16-char app password (not Gmail password)
+  → Verify recipient email is correct
+  → Check "Less Secure Apps" enabled if needed
+
+Broker connection fails?
+  → Verify API key & access token
+  → Check internet connection
+  → Falls back to Yahoo Finance automatically
+  → Use: broker.get_status() to check
+
+Metrics empty?
+  → Verify trades are marked as 'CLOSED' status
+  → Check trade_log.json exists
+  → Ensure trades have non-zero 'pnl' values
+
+Backtest showing no trades?
+  → Verify position was closed (phase='CLOSED')
+  → Check trade_log.json for entries
+  → Verify scenario dates include trades
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📚 FULL DOCUMENTATION: See INTEGRATION_GUIDE.md
+🚀 WORKING EXAMPLE: See complete_integration_example.py
+📊 DETAILED SUMMARY: See MODIFICATION_SUMMARY.txt
+
+Generated: June 2026
+Version: v5.5.2
