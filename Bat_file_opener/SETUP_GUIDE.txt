@@ -1,0 +1,128 @@
+═══════════════════════════════════════════════════════════════════════
+    OPTIONS MANAGER v5.4 - BATCH FILE SETUP GUIDE
+═══════════════════════════════════════════════════════════════════════
+
+📋 WHAT YOU'VE GOT
+─────────────────────────────────────────────────────────────────────
+
+Two batch files to run your Options Manager with a single click:
+
+  1️⃣  options_manager.bat (Simple Version)
+      └─ Fast & clean, runs the script directly
+      
+  2️⃣  options_manager_advanced.bat (Recommended)
+      └─ Includes error checking & helpful messages
+
+
+🔧 SETUP REQUIREMENTS
+─────────────────────────────────────────────────────────────────────
+
+STEP 1: Install Python (if not already installed)
+  • Download from: https://www.python.org/downloads/
+  • ⚠️  CRITICAL: Check "Add Python to PATH" during installation
+  • Verify installation:
+    - Press WIN + R
+    - Type: cmd
+    - Type: python --version
+    - Should show version number (e.g., Python 3.11.0)
+
+
+STEP 2: Install Required Python Packages
+  
+  Open Command Prompt and run:
+  
+    pip install numpy yfinance matplotlib
+  
+  Optional (for advanced features):
+  
+    pip install pandas openpyxl google-auth-oauthlib
+
+
+STEP 3: Place Files in Same Directory
+  
+  Your folder should contain:
+  
+    📁 Your Trading Folder/
+      ├─ options_manager.py
+      ├─ options_manager.bat  (or advanced version)
+      ├─ options_state.json (auto-created on first run)
+      └─ trade_archive/ (auto-created)
+
+
+🚀 RUNNING THE SCRIPT
+─────────────────────────────────────────────────────────────────────
+
+METHOD 1: Double-Click the Batch File
+  • Navigate to your folder
+  • Double-click options_manager.bat
+  • The program will start immediately ✓
+
+METHOD 2: Right-Click → Open with Command Prompt
+  • Right-click the .bat file
+  • Select "Edit" to customize if needed
+  • Double-click to run
+
+METHOD 3: Create Desktop Shortcut (Optional)
+  • Right-click options_manager.bat
+  • Select "Create shortcut"
+  • Move shortcut to Desktop
+  • Double-click anytime from Desktop
+
+
+💡 TIPS & TROUBLESHOOTING
+─────────────────────────────────────────────────────────────────────
+
+If the window closes too fast:
+  ✓ The batch files include "pause" command
+  ✓ Window will stay open after execution
+  ✓ Press any key to close
+
+If you get "Python not found":
+  ✓ Make sure Python is added to PATH
+  ✓ Restart Command Prompt after Python installation
+  ✓ Restart your computer for system changes
+
+If packages are missing:
+  ✓ Run in Command Prompt:
+    pip install --upgrade numpy yfinance matplotlib
+
+To customize the batch file:
+  ✓ Right-click → Edit with Notepad
+  ✓ Modify the "cd /d" path if needed
+  ✓ Save and run
+
+
+📊 WHAT HAPPENS WHEN YOU RUN IT
+─────────────────────────────────────────────────────────────────────
+
+1. Command window opens
+2. Script initializes and loads market data
+3. Interactive menu appears for strategy selection
+4. Follow on-screen prompts
+5. Live monitoring begins when position is entered
+6. Press CTRL+C to save and exit safely
+7. State is automatically saved for resumption
+
+
+⚡ QUICK REFERENCE
+─────────────────────────────────────────────────────────────────────
+
+Keyboard shortcuts during execution:
+  • CTRL+C → Save position and exit
+  • CTRL+E → Emergency close
+  • y/n    → Yes/No prompts
+
+Files created automatically:
+  • options_state.json     → Current position state
+  • trade_archive/         → Historical trades
+
+
+✅ YOU'RE ALL SET!
+─────────────────────────────────────────────────────────────────────
+
+Double-click your batch file and start trading! 🚀
+
+For issues: Check that Python and required packages are properly installed.
+
+
+═══════════════════════════════════════════════════════════════════════
