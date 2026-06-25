@@ -1,0 +1,53 @@
+# Ignore Python cache and environment
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pytest_cache/
+.pytest_cache/
+.python-version
+venv/
+.venv/
+ENV/
+env/
+
+# Ignore editor and OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Ignore runtime / local state files
+options_state.json
+
+# Ignore Jupyter and notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore logs and runtime generated files
+*.log
+logs/
+
+# Ignore local data or temporary files
+*.bak
+*.backup
+*.tmp
+*~
+
+# Ignore build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Ignore secret or local configuration files
+*.env
+.env.local
+.env.*.local
+
+# Ignore installed packages
+pip-wheel-metadata/
+**/site-packages/
