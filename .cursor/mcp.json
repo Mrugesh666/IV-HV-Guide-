@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "jetro": {
+      "type": "stdio",
+      "command": "C:\\Users\\mruge\\.jetro\\runtime\\node-win32-x64.exe",
+      "args": [
+        "C:\\Users\\mruge\\.jetro\\mcp-server\\index.js"
+      ],
+      "env": {
+        "JET_WORKSPACE": "c:\\IV_HV Guide",
+        "JET_API_URL": "https://api.jetro.ai",
+        "PATH": "C:\\Users\\mruge\\.jetro\\runtime;C:\\Program Files\\Eclipse Adoptium\\jdk-25.0.2.10-hotspot\\bin;C:\\Python314\\Scripts\\;C:\\Python314\\;C:\\Program Files\\Microsoft\\jdk-11.0.18.10-hotspot\\bin;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\ProgramData\\chocolatey\\bin;C:\\Program Files (x86)\\NVIDIA Corporation\\PhysX\\Common;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;F:\\;E:\\cursor\\resources\\app\\bin;C:\\Program Files\\Git\\cmd;C:\\Users\\mruge\\node_modules;C:\\Users\\mruge\\AppData\\Local\\Programs\\Python\\Python310\\Scripts\\;C:\\Users\\mruge\\AppData\\Local\\Programs\\Python\\Python310\\;C:\\Users\\mruge\\AppData\\Local\\Microsoft\\WindowsApps;E:\\Microsoft VS Code\\bin;C:\\Users\\mruge\\AppData\\Local\\Android\\Sdk\\platform-tools;C:\\Users\\mruge\\AppData\\Roaming\\npm;C:\\Users\\mruge\\AppData\\Local\\Programs\\Antigravity\\bin"
+      }
+    }
+  }
+}

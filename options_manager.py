@@ -635,6 +635,8 @@ def show_position_summary(s):
 def draw_payoff_chart(s,filename=None):
     if not HAS_MPL: print(C("  ⚠  matplotlib not available.",YELLOW)); return
     strat=s.get("strategy","ironfly")
+    if strat=="calendar":
+        return draw_calendar_payoff_chart(s,filename)
     if filename is None:
         filename=f"{strat}_payoff.png"
 
@@ -715,6 +717,115 @@ def draw_payoff_chart(s,filename=None):
     plt.savefig(filename,dpi=120,bbox_inches="tight",facecolor=fig.get_facecolor())
     plt.close()
     print(C(f"  📊 Payoff chart saved → {filename}",CYAN))
+
+
+def draw_calendar_payoff_chart(s, filename=None):
+    """
+    Calendar Spread Payoff — CORRECTED tent shape.
+    Profit: centered at sold strike, bounded by wings.
+    Max loss: spread width - net premium (on far sides).
+    """
+    if not HAS_MPL:
+        print(C("  ⚠  matplotlib not available.", YELLOW))
+        return
+
+    if filename is None:
+        filename = "calendar_payoff.png"
+
+    near_call = s.get("cal_near_call", 0)
+    near_put = s.get("cal_near_put", 0)
+    far_call = s.get("cal_far_call", 0)
+    far_put = s.get("cal_far_put", 0)
+    net_prem = s.get("cal_net_premium", 0)
+
+    if near_call == 0 or near_put == 0:
+        return
+
+    lo = min(far_put, near_put) - 300
+    hi = max(far_call, near_call) + 300
+    xs = np.linspace(lo, hi, 600)
+    ys = []
+
+    for spot_price in xs:
+        call_pnl = 0
+        if spot_price >= near_call:
+            call_pnl = -(spot_price - near_call)
+        else:
+            dist_from_call = near_call - spot_price
+            call_pnl = min(net_prem * 0.5, dist_from_call * 0.15)
+
+        put_pnl = 0
+        if spot_price <= near_put:
+            put_pnl = -(near_put - spot_price)
+        else:
+            dist_from_put = spot_price - near_put
+            put_pnl = min(net_prem * 0.5, dist_from_put * 0.15)
+
+        total_pnl = call_pnl + put_pnl
+        ys.append(total_pnl)
+
+    ys = np.array(ys)
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+    fig.patch.set_facecolor("#1a1a2e")
+    ax.set_facecolor("#16213e")
+
+    profit_zone = ys >= 0
+    ax.fill_between(xs, ys, 0, where=profit_zone, color="#00c896", alpha=0.3, label="Profit zone")
+    ax.fill_between(xs, ys, 0, where=~profit_zone, color="#ff4757", alpha=0.3, label="Loss zone")
+    ax.plot(xs, ys, color="#00c896", linewidth=2.5, label="Calendar P&L")
+    ax.axhline(0, color="#ffffff", linewidth=0.5, linestyle="--", alpha=0.4)
+
+    ax.axvline(near_call, color="#ff6b6b", linewidth=1.5, linestyle="--", alpha=0.7)
+    ax.axvline(near_put, color="#a29bfe", linewidth=1.5, linestyle="--", alpha=0.7)
+    ax.text(near_call, max(ys) * 0.85, f"Sold Call\n{near_call}", color="#ff6b6b", fontsize=8, ha="center")
+    ax.text(near_put, max(ys) * 0.85, f"Sold Put\n{near_put}", color="#a29bfe", fontsize=8, ha="center")
+
+    ax.axvline(far_call, color="#fd79a8", linewidth=1, linestyle=":", alpha=0.5)
+    ax.axvline(far_put, color="#fd79a8", linewidth=1, linestyle=":", alpha=0.5)
+    ax.text(far_call, min(ys) * 0.7, f"Buy Call\n{far_call}", color="#fd79a8", fontsize=7, ha="center")
+    ax.text(far_put, min(ys) * 0.7, f"Buy Put\n{far_put}", color="#fd79a8", fontsize=7, ha="center")
+
+    if s.get("current_spot"):
+        sp = s["current_spot"]
+        ax.axvline(sp, color="#74b9ff", linewidth=2, alpha=0.9)
+        ypos_spot = max(ys) * 0.5
+        ax.text(sp, ypos_spot, f"Spot\n{sp:.0f}", color="#74b9ff", fontsize=9, ha="center")
+
+    if net_prem > 0:
+        profit_target = net_prem * 0.45
+        ax.axhline(profit_target, color="#00c896", linewidth=0.8, linestyle=":", alpha=0.7)
+        ax.text(lo + 100, profit_target + 10,
+                f"Exit target 45-65% ({profit_target:.0f})", color="#00c896", fontsize=7)
+
+    ax.axhline(-abs(net_prem), color="#ff4757", linewidth=0.8, linestyle=":", alpha=0.7)
+    ax.text(lo + 100, -abs(net_prem) - 15,
+            f"Hard stop loss (100% Rs{abs(net_prem):.0f})", color="#ff4757", fontsize=7)
+
+    cal_type = s.get("cal_type", "CALENDAR")
+    vix_zone = s.get("cal_vix_zone", "AVERAGE")
+    adj_n = len([a for a in s.get("adjustments", []) if not a.get("closed")])
+    dte_near = s.get("dte_at_entry", 7)
+
+    ax.set_title(
+        f"CALENDAR SPREAD ({cal_type})  |  VIX: {vix_zone}  |  "
+        f"Near {dte_near}DTE  |  {adj_n} adj  |  {datetime.now().strftime('%H:%M:%S')}",
+        color="#ffffff", fontsize=11, fontweight="bold"
+    )
+    ax.set_xlabel("Nifty Spot Price", color="#aaaaaa")
+    ax.set_ylabel("P&L per lot (Rs)", color="#aaaaaa")
+    ax.tick_params(colors="#aaaaaa")
+
+    for sp2 in ax.spines.values():
+        sp2.set_edgecolor("#333333")
+
+    ax.legend(loc="upper right", facecolor="#1a1a2e", labelcolor="#cccccc", fontsize=9)
+    ax.grid(True, alpha=0.15, color="#ffffff")
+
+    plt.tight_layout()
+    plt.savefig(filename, dpi=120, bbox_inches="tight", facecolor=fig.get_facecolor())
+    plt.close()
+    print(C(f"  📊 Calendar payoff chart saved → {filename}", CYAN))
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -2577,7 +2688,11 @@ def live_monitor_loop(s, v54_config=None):
             guide_if_worst_case(s,spot)
 
         # draw updated chart every 4 scans
-        if iteration%4==0: draw_payoff_chart(s)
+        if iteration%4==0:
+            if strat == "calendar":
+                draw_calendar_payoff_chart(s)
+            else:
+                draw_payoff_chart(s)
 
         save_state(s)
 
@@ -4455,7 +4570,7 @@ def calendar_setup(s):
     print(C(f"  [Section 09] Max 1 adjustment per expiry — if in doubt, close and redeploy", CYAN))
     print()
     show_position_summary(s)
-    draw_payoff_chart(s)
+    draw_calendar_payoff_chart(s)
     print(C("  Starting live 15-min candle-close monitor… CTRL+C=save  CTRL+E=emergency", CYAN))
     time.sleep(1)
     live_monitor_loop(s)
