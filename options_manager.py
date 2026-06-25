@@ -503,7 +503,9 @@ def update_live_premiums(s, spot):
     pnl = 0.0
     for leg in s["legs"].values():
         if leg is None: continue
-        live = fetch_live_premium(leg["strike"], spot, leg["type"], atm_iv, dte)
+        leg_exp = _leg_expiry(s, leg)
+        leg_dte = _leg_dte(leg_exp, dte)
+        live = fetch_live_premium(leg["strike"], spot, leg["type"], atm_iv, leg_dte)
         if live is not None:
             leg["current_premium"] = live
         val = leg["current_premium"]
@@ -511,7 +513,9 @@ def update_live_premiums(s, spot):
 
     for adj in s["adjustments"]:
         if adj.get("closed"): continue
-        live = fetch_live_premium(adj["strike"], spot, adj["type"], atm_iv, dte)
+        adj_exp = adj.get("expiry") or s.get("expiry_date", "")
+        adj_dte = _leg_dte(adj_exp, dte)
+        live = fetch_live_premium(adj["strike"], spot, adj["type"], atm_iv, adj_dte)
         if live is not None:
             adj["current_premium"] = live
         val = adj.get("current_premium", adj["entry_premium"])
@@ -521,6 +525,31 @@ def update_live_premiums(s, spot):
 
 def option_intrinsic(strike,spot,opt_type):
     return max(0.0,spot-strike) if opt_type=="CE" else max(0.0,strike-spot)
+
+def _format_expiry(exp_str):
+    if not exp_str:
+        return "—"
+    try:
+        return datetime.strptime(exp_str, "%Y-%m-%d").strftime("%d%b%Y").upper()
+    except Exception:
+        return exp_str
+
+def _leg_dte(exp_str, fallback=3):
+    if not exp_str:
+        return fallback
+    try:
+        return max(1, (datetime.strptime(exp_str, "%Y-%m-%d").date() - datetime.now().date()).days)
+    except Exception:
+        return fallback
+
+def _leg_expiry(s, leg):
+    if leg.get("expiry"):
+        return leg["expiry"]
+    if s.get("strategy") == "calendar":
+        strike = leg.get("strike")
+        if leg.get("action") == "buy" and strike in (s.get("cal_far_call"), s.get("cal_far_put")):
+            return s.get("cal_far_expiry") or s.get("expiry_date", "")
+    return s.get("expiry_date", "")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -534,11 +563,17 @@ def show_position_summary(s):
         if leg: lots=leg.get("lots",1); break
     lsize=s["lot_size"]
 
-    strat_label = {"ironfly":"Iron Fly","ironcondor":"Iron Condor","butterfly":"Butterfly","credit_spread":"Credit Spread","bwb":"BWB"}.get(s.get("strategy",""),"Position")
+    strat_label = {"ironfly":"Iron Fly","ironcondor":"Iron Condor","butterfly":"Butterfly",
+                   "credit_spread":"Credit Spread","bwb":"BWB","calendar":"Calendar Spread"}.get(s.get("strategy",""),"Position")
+    is_cal = s.get("strategy") == "calendar"
     print()
     print(C(f"  ── {strat_label} Position Summary ──────────────────────",CYAN))
-    print(f"  {'Leg':<22} {'Strike':<8} {'Act':<6} {'Entry':>8}  {'Live':>8}  {'P&L':>8}")
-    print(f"  {'-'*64}")
+    if is_cal:
+        print(f"  {'Leg':<20} {'Expiry':<10} {'Strike':<8} {'Act':<6} {'Entry':>8}  {'Live':>8}  {'P&L':>8}")
+        print(f"  {'-'*72}")
+    else:
+        print(f"  {'Leg':<22} {'Strike':<8} {'Act':<6} {'Entry':>8}  {'Live':>8}  {'P&L':>8}")
+        print(f"  {'-'*64}")
 
     for key,leg in s["legs"].items():
         if leg:
@@ -546,10 +581,17 @@ def show_position_summary(s):
             leg_pnl=(leg["entry_premium"]-leg["current_premium"]) if leg["action"]=="sell" else (leg["current_premium"]-leg["entry_premium"])
             pc=GREEN if leg_pnl>=0 else RED
             label=key.replace("_"," ").title()
-            print(f"  {label:<22} {leg['strike']:<8} "
-                  f"{C(leg['action'].upper()[:4],ac):<15} "
-                  f"{leg['entry_premium']:>8.1f}  {leg['current_premium']:>8.1f}  "
-                  f"{C(f'{leg_pnl:+.1f}',pc):>16}")
+            exp_fmt = _format_expiry(_leg_expiry(s, leg))
+            if is_cal:
+                print(f"  {label:<20} {exp_fmt:<10} {leg['strike']:<8} "
+                      f"{C(leg['action'].upper()[:4],ac):<15} "
+                      f"{leg['entry_premium']:>8.1f}  {leg['current_premium']:>8.1f}  "
+                      f"{C(f'{leg_pnl:+.1f}',pc):>16}")
+            else:
+                print(f"  {label:<22} {leg['strike']:<8} "
+                      f"{C(leg['action'].upper()[:4],ac):<15} "
+                      f"{leg['entry_premium']:>8.1f}  {leg['current_premium']:>8.1f}  "
+                      f"{C(f'{leg_pnl:+.1f}',pc):>16}")
 
     for i,adj in enumerate(s["adjustments"],1):
         if not adj.get("closed"):
@@ -622,10 +664,16 @@ def draw_payoff_chart(s,filename=None):
     ax.plot(xs,ys,color="#00c896",linewidth=2)
     ax.axhline(0,color="#ffffff",linewidth=0.5,linestyle="--",alpha=0.4)
 
-    for be,lbl in [(s["upper_be"],"Upper BE"),(s["lower_be"],"Lower BE")]:
-        ax.axvline(be,color="#ffd700",linewidth=1.2,linestyle="--",alpha=0.9)
-        ypos=max(ys)*0.8 if max(ys)>0 else 10
-        ax.text(be,ypos,f"{lbl}\n{be:.0f}",color="#ffd700",fontsize=8,ha="center")
+    # ── Safe breakeven line plotting with validation ──────────────
+    for be,lbl in [(s.get("upper_be"),"Upper BE"),(s.get("lower_be"),"Lower BE")]:
+        if be is None:
+            continue  # Skip if BE not set (e.g., calendar spreads)
+        try:
+            ax.axvline(be,color="#ffd700",linewidth=1.2,linestyle="--",alpha=0.9)
+            ypos=max(ys)*0.8 if max(ys)>0 else 10
+            ax.text(be,ypos,f"{lbl}\n{be:.0f}",color="#ffd700",fontsize=8,ha="center")
+        except Exception:
+            pass  # Skip plotting if BE is invalid
 
     if s.get("current_spot"):
         sp=s["current_spot"]
@@ -1294,13 +1342,22 @@ def print_broker_table(s, spot, pnl_per_lot, pct, lots, strat):
 
     # ── header bar ────────────────────────────────────────────────
     strat_label = {"ironfly":"Iron Fly","ironcondor":"Iron Condor",
-                   "butterfly":"Butterfly","credit_spread":"Credit Spread"}.get(strat,"Position")
+                   "butterfly":"Butterfly","credit_spread":"Credit Spread",
+                   "calendar":"Calendar Spread"}.get(strat,"Position")
     now_str  = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
     dte_col  = YELLOW if isinstance(dte_now,int) and dte_now<=3 else GRAY
 
+    if strat == "calendar":
+        far_exp = s.get("cal_far_expiry", "")
+        far_dte = _leg_dte(far_exp) if far_exp else "?"
+        exp_hdr = (f"Near: {exp_str} ({dte_now} DTE)  │  "
+                   f"Far: {far_exp} ({far_dte} DTE)")
+    else:
+        exp_hdr = f"Expiry: {exp_str}  │  {dte_now} DTE"
+
     print()
     print(C("  ═"*33, CYAN))
-    print(C(f"  ⚡  {strat_label}  │  Spot: {spot}  │  Expiry: {exp_str}  │  {C(str(dte_now)+' DTE', dte_col)}  │  {now_str}", CYAN+BOLD))
+    print(C(f"  ⚡  {strat_label}  │  Spot: {spot}  │  {exp_hdr}  │  {now_str}", CYAN+BOLD))
     print(C("  ═"*33, CYAN))
     print()
 
@@ -1329,15 +1386,9 @@ def print_broker_table(s, spot, pnl_per_lot, pct, lots, strat):
         qty      = leg.get("lots", lots)
         sign     = "-" if leg["action"]=="sell" else "+"
         qty_str  = f"{sign}{qty}x"
-        pos_lbl  = f"{qty_str} {exp_str.replace('-','').replace('2026','26MAY2026') if exp_str else 'MAY2026'} {leg['strike']}{leg['type']}"
-        # use actual expiry format like broker
-        if exp_str:
-            try:
-                dt=datetime.strptime(exp_str,"%Y-%m-%d")
-                exp_fmt=dt.strftime("%d%b%Y").upper()
-            except: exp_fmt=exp_str
-        else: exp_fmt="MAY2026"
-        pos_lbl = f"{qty_str} {exp_fmt} {leg['strike']}{leg['type']}"
+        leg_exp  = _leg_expiry(s, leg)
+        exp_fmt  = _format_expiry(leg_exp)
+        pos_lbl  = f"{qty_str} {exp_fmt} {leg['strike']}{leg['type']}"
 
         entry_p  = round(leg["entry_premium"], 2)
         curr_p   = round(leg.get("current_premium", entry_p), 2)
@@ -1356,12 +1407,8 @@ def print_broker_table(s, spot, pnl_per_lot, pct, lots, strat):
         if adj.get("closed"): continue
         if "strike" not in adj: continue
         sign     = "-" if adj["action"]=="sell" else "+"
-        if exp_str:
-            try:
-                dt=datetime.strptime(exp_str,"%Y-%m-%d")
-                exp_fmt=dt.strftime("%d%b%Y").upper()
-            except: exp_fmt=exp_str
-        else: exp_fmt="MAY2026"
+        adj_exp  = adj.get("expiry") or exp_str
+        exp_fmt  = _format_expiry(adj_exp)
         pos_lbl  = f"{sign}1x {exp_fmt} {adj['strike']}{adj.get('opt_type','')}"
         entry_p  = round(adj["entry_premium"],2)
         curr_p   = round(adj.get("current_premium",entry_p),2)
@@ -1395,8 +1442,13 @@ def print_broker_table(s, spot, pnl_per_lot, pct, lots, strat):
     print(f"  {'Hard Stop':<16}: {C(f'Rs {-2*nc:.0f} (2x credit)',RED)}")
 
     # range status bar
-    dist_up = s.get("upper_be",0) - spot
-    dist_lo = spot - s.get("lower_be",0)
+    ube = s.get("upper_be")
+    lbe = s.get("lower_be")
+    if strat == "calendar":
+        ube = ube if ube is not None else s.get("cal_near_call")
+        lbe = lbe if lbe is not None else s.get("cal_near_put")
+    dist_up = (ube - spot) if ube is not None else None
+    dist_lo = (spot - lbe) if lbe is not None else None
     if isinstance(dist_up,(int,float)) and isinstance(dist_lo,(int,float)):
         if dist_up > 0 and dist_lo > 0:
             total_range = dist_up + dist_lo
@@ -2139,8 +2191,9 @@ def update_premiums_manual(s):
         action = leg["action"]
         entry_p = leg["entry_premium"]
         current_p = leg.get("current_premium", entry_p)
-        
-        label = f"{action.upper()} {opt_type} {strike}"
+        leg_exp = _format_expiry(_leg_expiry(s, leg))
+
+        label = f"{action.upper()} {opt_type} {strike} ({leg_exp})"
         col = RED if action == "sell" else GREEN
         
         print(f"  {C(label, col)}")
@@ -2481,18 +2534,31 @@ def live_monitor_loop(s, v54_config=None):
             elif strat=="strangle":       guide_strangle_adj(s,spot,"lower")
             elif strat=="calendar":       guide_calendar_adj(s,spot,"lower")
             else:                         guide_if_breach(s,spot,"lower")
+        elif breach=="near_breach":
+            sold_strike=s.get("cal_sold_strike",0)
+            dist=abs(spot-sold_strike) if sold_strike else 0
+            print(C(f"\n  ⚠  Calendar: approaching breach zone — {dist:.0f}pts from sold strike {sold_strike}",YELLOW))
         elif breach=="near_upper":
-            dist=s["upper_be"]-spot
-            sc=s.get("short_call")
-            sc_dist=sc-spot if sc else dist
-            print(C(f"\n  ⚠  Approaching UPPER: {dist:.0f}pts to BE"+(f", {sc_dist:.0f}pts to Short Call {sc}" if sc else ""),YELLOW))
+            ube=s.get("upper_be") or (s.get("cal_near_call") if strat=="calendar" else None)
+            if ube is not None:
+                dist=ube-spot
+                sc=s.get("short_call")
+                sc_dist=sc-spot if sc else dist
+                print(C(f"\n  ⚠  Approaching UPPER: {dist:.0f}pts to BE"+(f", {sc_dist:.0f}pts to Short Call {sc}" if sc else ""),YELLOW))
         elif breach=="near_lower":
-            dist=spot-s["lower_be"]
-            sp2=s.get("short_put")
-            sp_dist=spot-sp2 if sp2 else dist
-            print(C(f"\n  ⚠  Approaching LOWER: {dist:.0f}pts to BE"+(f", {sp_dist:.0f}pts to Short Put {sp2}" if sp2 else ""),YELLOW))
+            lbe=s.get("lower_be") or (s.get("cal_near_put") if strat=="calendar" else None)
+            if lbe is not None:
+                dist=spot-lbe
+                sp2=s.get("short_put")
+                sp_dist=spot-sp2 if sp2 else dist
+                print(C(f"\n  ⚠  Approaching LOWER: {dist:.0f}pts to BE"+(f", {sp_dist:.0f}pts to Short Put {sp2}" if sp2 else ""),YELLOW))
         else:
-            print(C(f"  ✅ Safe  ↑{s['upper_be']-spot:.0f}pts to upper  ↓{spot-s['lower_be']:.0f}pts to lower",GREEN))
+            ube=s.get("upper_be") or (s.get("cal_near_call") if strat=="calendar" else None)
+            lbe=s.get("lower_be") or (s.get("cal_near_put") if strat=="calendar" else None)
+            if ube is not None and lbe is not None:
+                print(C(f"  ✅ Safe  ↑{ube-spot:.0f}pts to upper  ↓{spot-lbe:.0f}pts to lower",GREEN))
+            else:
+                print(C("  ✅ Safe",GREEN))
 
         if reversal and s.get("adjustments"): guide_reversal(s,spot)
 
@@ -3027,9 +3093,6 @@ def main():
 
     zone=run_iv_hv_analysis(s)
     if zone: strategy_selection(s, zone, v54_config)
-
-if __name__=="__main__":
-    main()
 
 
 
@@ -4241,39 +4304,59 @@ def calendar_setup(s):
     print(C(f"  Far expiry:  {expiry_far} ({dte_far} DTE)", CYAN))
     print()
 
+    # ═══ NEW: SECTION 05 MOVED HERE — Premium Selection FIRST ═══
+    print(C("  ── Section 05: Premium Targets (Select BEFORE strikes) ─", CYAN+BOLD))
+    print(C(f"  Target: Rs {target_prem_lo}–{target_prem_hi} per sold leg", YELLOW+BOLD))
+    print(C("  Use these as guides when selecting strikes next.", GRAY))
+    print()
+
+    try:
+        target_call_p = float(input(C(f"  Target SELL CALL premium [{target_prem_lo}]: ", CYAN)).strip() or str(target_prem_lo))
+        target_put_p  = float(input(C(f"  Target SELL PUT premium [{target_prem_lo}]: ", CYAN)).strip() or str(target_prem_lo))
+    except:
+        target_call_p = target_prem_lo
+        target_put_p = target_prem_lo
+
+    print(C(f"  ✓ Target premiums: CALL Rs{target_call_p:.0f}  PUT Rs{target_put_p:.0f}", GREEN))
+    print(C("  Now find strikes that match these target premiums in your broker's chain.", GRAY))
+    print()
+
     # ── Section 06 & 07: Strike Selection ──────────────────────────
     print(C("  ── Section 06 & 07: Strike Selection ───────────────", CYAN))
+    print(C("  Find strikes with premiums matching targets above", YELLOW+BOLD))
     print(C("  Sell near-expiry at ATM or slightly OTM", GRAY))
     print(C("  Buy far-expiry as hedge (same or wider strikes)", GRAY))
-    print(C("  Target premiums guide strike choice", GRAY))
     print()
 
     if spot:
         atm_call = int(round(spot / 50) * 50)
         atm_put  = int(round(spot / 50) * 50)
         print(f"  ATM level for {spot}: {C(str(atm_call), CYAN)}")
+        print(C("  Tip: Start at ATM, adjust ±1-2 strikes to match target premiums.", GRAY))
     else:
         atm_call = atm_put = 0
 
     try:
-        near_call = int(input(C(f"  Near-expiry SELL CALL [{atm_call}]: ", CYAN)).strip() or str(atm_call))
-        near_put  = int(input(C(f"  Near-expiry SELL PUT [{atm_put}]: ", CYAN)).strip() or str(atm_put))
+        near_call = int(input(C(f"  Near-expiry SELL CALL (target Rs{target_call_p:.0f}) [{atm_call}]: ", CYAN)).strip() or str(atm_call))
+        near_put  = int(input(C(f"  Near-expiry SELL PUT (target Rs{target_put_p:.0f}) [{atm_put}]: ", CYAN)).strip() or str(atm_put))
         far_call  = int(input(C(f"  Far-expiry BUY CALL (hedge) [{near_call}]: ", CYAN)).strip() or str(near_call))
         far_put   = int(input(C(f"  Far-expiry BUY PUT (hedge) [{near_put}]: ", CYAN)).strip() or str(near_put))
-    except: print(C("  ✗ Invalid.", RED)); return
+    except:
+        print(C("  ✗ Invalid.", RED)); return
 
-    # ── Section 05: Premium Selection ──────────────────────────────
+    # ── Actual premiums entered now (matched to target) ──────────────
     print()
-    print(C("  ── Section 05: Premium Selection ──────────────────", CYAN))
-    print(C(f"  Target: Rs {target_prem_lo}–{target_prem_hi} per sold leg", YELLOW+BOLD))
+    print(C("  ── Section 05: Actual Premiums (Validation) ───────", CYAN))
+    print(C("  Enter actual market premiums from your broker:", YELLOW))
     print()
 
     try:
-        near_call_p = float(input(C(f"  SELL CALL {near_call} premium (Rs [{target_prem_lo}]): ", CYAN)).strip() or str(target_prem_lo))
-        near_put_p  = float(input(C(f"  SELL PUT {near_put} premium (Rs [{target_prem_lo}]): ", CYAN)).strip() or str(target_prem_lo))
-        far_call_p  = float(input(C(f"  BUY CALL {far_call} premium (Rs): ", CYAN)).strip())
-        far_put_p   = float(input(C(f"  BUY PUT {far_put} premium (Rs): ", CYAN)).strip())
-    except: print(C("  ✗ Invalid.", RED)); return
+        near_call_p = float(input(C(f"  SELL CALL {near_call} actual premium (Rs): ", CYAN)).strip())
+        near_put_p  = float(input(C(f"  SELL PUT {near_put} actual premium (Rs): ", CYAN)).strip())
+        far_call_p  = float(input(C(f"  BUY CALL {far_call} actual premium (Rs): ", CYAN)).strip())
+        far_put_p   = float(input(C(f"  BUY PUT {far_put} actual premium (Rs): ", CYAN)).strip())
+    except:
+        print(C("  ✗ Invalid.", RED)); return
 
     # Calculate net premium
     near_credit = near_call_p + near_put_p
@@ -4285,6 +4368,20 @@ def calendar_setup(s):
     print(f"  Near sell credit : Rs {near_credit:.1f}  (CALL {near_call_p:.1f} + PUT {near_put_p:.1f})")
     print(f"  Far buy debit    : Rs {far_debit:.1f}   (CALL {far_call_p:.1f} + PUT {far_put_p:.1f})")
     print(f"  Net premium      : Rs {net_premium:.1f}  {C('(CREDIT)', GREEN if net_premium>0 else RED)}")
+    print()
+
+    # ── Check if premium targets were met ────────────────────────────
+    call_var = abs(near_call_p - target_call_p)
+    put_var = abs(near_put_p - target_put_p)
+    print(C("  ── Target Match Validation ────────────────────────", CYAN))
+    print(f"  CALL: Target Rs{target_call_p:.0f}  Actual Rs{near_call_p:.1f}  Variance: Rs{call_var:.1f}")
+    print(f"  PUT:  Target Rs{target_put_p:.0f}  Actual Rs{near_put_p:.1f}  Variance: Rs{put_var:.1f}")
+    if call_var <= 5 and put_var <= 5:
+        print(C("  ✅  Premiums within acceptable range (±5%)", GREEN))
+    elif call_var <= 10 and put_var <= 10:
+        print(C("  ✓  Premiums within acceptable range (±10%)", YELLOW))
+    else:
+        print(C("  ⚠  Premiums > 10% from target — consider different strikes", YELLOW))
     print()
 
     if net_premium < 0 and cal_type != "DEBIT":
@@ -4316,6 +4413,9 @@ def calendar_setup(s):
         "cal_sold_prem":      near_call_p,
         "cal_net_premium":    net_premium,
         "net_premium":        net_premium,
+        "net_credit":         abs(net_premium),
+        "upper_be":           max(near_call, near_put),
+        "lower_be":           min(near_call, near_put),
         "cal_max_loss":       max_loss,
         "expiry_date":        expiry_near,
         "dte_at_entry":       dte_near,
@@ -4587,6 +4687,10 @@ def debit_spread_setup(s):
     print(C("  Starting live 15-min monitor… CTRL+C=save  CTRL+E=emergency", CYAN))
     time.sleep(1)
     live_monitor_loop(s)
+
+
+if __name__=="__main__":
+    main()
 
 
 # ═══════════════════════════════════════════════════════════════════

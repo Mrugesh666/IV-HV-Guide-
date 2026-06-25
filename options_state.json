@@ -1,0 +1,114 @@
+{
+  "symbol": "^NSEI",
+  "vix_symbol": "^INDIAVIX",
+  "hv_window": 20,
+  "atm_iv": 10.0,
+  "hv": 12.91,
+  "ratio": 0.775,
+  "iv_rank": 20.8,
+  "vix_current": 13.05,
+  "vix_low52": 9.15,
+  "vix_high52": 27.89,
+  "zone_label": "\ud83d\udfe2  Very Cheap Premium \u2014 Aggressive Buy (HIGH CONVICTION)",
+  "strategy": "calendar",
+  "phase": "LIVE",
+  "legs": {
+    "near_call_sell": {
+      "strike": 24450,
+      "type": "CE",
+      "action": "sell",
+      "expiry": "2026-06-30",
+      "lots": 1,
+      "entry_premium": 25.0,
+      "current_premium": 12.29
+    },
+    "near_put_sell": {
+      "strike": 23850,
+      "type": "PE",
+      "action": "sell",
+      "expiry": "2026-06-30",
+      "lots": 1,
+      "entry_premium": 25.0,
+      "current_premium": 33.71
+    },
+    "far_call_buy": {
+      "strike": 24800,
+      "type": "CE",
+      "action": "buy",
+      "expiry": "2026-07-07",
+      "lots": 1,
+      "entry_premium": 22.4,
+      "current_premium": 11.05
+    },
+    "far_put_buy": {
+      "strike": 23450,
+      "type": "PE",
+      "action": "buy",
+      "expiry": "2026-07-07",
+      "lots": 1,
+      "entry_premium": 24.4,
+      "current_premium": 12.11
+    }
+  },
+  "adjustments": [],
+  "roll_count": {
+    "call": 0,
+    "put": 0
+  },
+  "net_credit": 0.0,
+  "upper_be": null,
+  "lower_be": null,
+  "short_call": null,
+  "short_put": null,
+  "entry_spot": 24052.8,
+  "current_spot": 24052.8,
+  "log": [
+    "[17:30:45] Strategy selected: Calendar Spread (buy back-month, sell front)",
+    "[17:41:41] Calendar Spread (BALANCED): Near SELL 24450C@Rs25 + 23850P@Rs25 | Far BUY 24800C@Rs22 + 23450P@Rs24 | Net=3 VIX=AVERAGE"
+  ],
+  "pnl_snapshots": [
+    {
+      "ts": "2026-06-25T18:35:06.686505",
+      "spot": 24052.8,
+      "pnl": -41.1
+    },
+    {
+      "ts": "2026-06-25T18:40:07.270262",
+      "spot": 24052.8,
+      "pnl": -41.1
+    },
+    {
+      "ts": "2026-06-25T18:45:11.368915",
+      "spot": 24052.8,
+      "pnl": -41.1
+    },
+    {
+      "ts": "2026-06-25T19:11:19.099178",
+      "spot": 24052.8,
+      "pnl": -19.64
+    },
+    {
+      "ts": "2026-06-25T19:16:19.534623",
+      "spot": 24052.8,
+      "pnl": -19.64
+    }
+  ],
+  "entry_time": "2026-06-25T17:41:41.293389",
+  "lot_size": 75,
+  "cal_type": "BALANCED",
+  "cal_vix_zone": "AVERAGE",
+  "cal_vix_entry": 13.05,
+  "cal_near_call": 24450,
+  "cal_near_put": 23850,
+  "cal_far_call": 24800,
+  "cal_far_put": 23450,
+  "cal_sold_strike": 24450,
+  "cal_sold_prem": 25.0,
+  "cal_net_premium": 3.200000000000003,
+  "net_premium": 3.200000000000003,
+  "cal_max_loss": 596.8,
+  "expiry_date": "2026-06-30",
+  "dte_at_entry": 5,
+  "cal_far_expiry": "2026-07-07",
+  "cal_dte_far": 12
+}
